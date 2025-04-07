@@ -1,24 +1,25 @@
 import { useFormulaStore } from '../store/formulaStore'
-import { useAutocomplete } from '../hooks/useAutocomplete'
+import { useAutocomplete, Suggestion } from '../hooks/useAutocomplete'
 import { useState } from 'react'
-
-type Suggestion = {
-  id: string
-  name: string
-  category: string
-  value: string
-}
 
 export default function FormulaInput() {
   const { formula, addItem, removeItem } = useFormulaStore()
-  const { data = [] } = useAutocomplete()
-  const suggestions = data as Suggestion[]
+  const { data: suggestions = [] } = useAutocomplete()
   const [inputValue, setInputValue] = useState('')
+  const [showDropdown, setShowDropdown] = useState(false)
+
+  const filteredSuggestions = suggestions.filter((s) =>
+    s.name.toLowerCase().includes(inputValue.toLowerCase())
+  )
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
       const trimmed = inputValue.trim()
-      const match = suggestions.find((s: Suggestion) => s.name === trimmed)
+
+      if (!trimmed) return
+
+      const match = suggestions.find((s) => s.name === trimmed)
       if (match) {
         addItem({ type: 'tag', ...match })
       } else if (/^[\d]+$/.test(trimmed)) {
@@ -26,24 +27,53 @@ export default function FormulaInput() {
       } else if (/^[+\-*/^()]$/.test(trimmed)) {
         addItem({ type: 'operator', value: trimmed })
       }
+
       setInputValue('')
+      setShowDropdown(false)
     } else if (e.key === 'Backspace' && inputValue === '') {
       removeItem(formula.length - 1)
     }
   }
 
+  const handleSuggestionClick = (s: Suggestion) => {
+    addItem({ type: 'tag', ...s })
+    setInputValue('')
+    setShowDropdown(false)
+  }
+
+  const evalFormula = () => {
+    const expr = formula
+      .map((item) => {
+        if (item.type === 'tag') {
+          return typeof item.value === 'number' ? item.value : 0
+        }
+        if (item.type === 'number') return item.value
+        if (item.type === 'operator') return item.value
+        return ''
+      })
+      .join(' ')
+
+    try {
+      return Function(`return (${expr})`)()
+    } catch {
+      return 'Invalid formula'
+    }
+  }
+
   return (
-    <div className="flex flex-col gap-2 p-4 border rounded bg-white shadow w-[500px]">
-      <div className="flex flex-wrap gap-2">
+    <div className="w-full max-w-3xl p-4">
+      <div className="flex items-center border border-purple-400 rounded px-2 py-1 bg-white shadow-sm text-sm font-mono relative">
+        <span className="text-purple-500 font-semibold mr-2">=</span>
+
         {formula.map((item, index) => (
           <div
             key={index}
-            className="flex items-center space-x-1 bg-gray-100 px-2 py-1 rounded"
+            className="flex items-center mx-1 px-2 py-0.5 rounded bg-gray-100"
           >
             {item.type === 'tag' && (
               <>
-                <span className="text-blue-600 font-semibold">{item.name}</span>
-                <select className="ml-2 text-sm">
+                <span className="text-blue-600">{item.name}</span>
+                <select className="ml-2 text-xs text-gray-700 bg-white border border-gray-300 rounded">
                   <option>Option 1</option>
                   <option>Option 2</option>
                 </select>
@@ -55,39 +85,33 @@ export default function FormulaInput() {
         ))}
 
         <input
-          className="min-w-[100px] outline-none p-1"
-          placeholder="Type..."
+          className="flex-1 outline-none px-1 min-w-[100px] text-gray-700"
+          placeholder="Enter a formula"
           value={inputValue}
-          onChange={(e) => setInputValue(e.target.value)}
+          onChange={(e) => {
+            setInputValue(e.target.value)
+            setShowDropdown(true)
+          }}
           onKeyDown={handleKeyDown}
         />
-      </div>
-
-      {inputValue && (
-        <div className="relative">
-          <div className="absolute left-0 mt-1 w-full bg-white border rounded shadow z-10">
-            {suggestions
-              .filter((s: Suggestion) =>
-                s.name.toLowerCase().includes(inputValue.toLowerCase())
-              )
-              .map((item: Suggestion) => (
-                <div
-                  key={item.id}
-                  className="px-3 py-2 hover:bg-blue-100 cursor-pointer"
-                  onMouseDown={() => {
-                    addItem({ type: 'tag', ...item })
-                    setInputValue('')
-                  }}
-                >
-                  <span className="font-medium">{item.name}</span>
-                  <span className="text-xs text-gray-500 ml-2">
-                    ({item.category})
-                  </span>
-                </div>
-              ))}
+        {showDropdown && filteredSuggestions.length > 0 && (
+          <div className="absolute left-10 top-full mt-1 w-72 bg-white border border-gray-300 rounded shadow z-10 max-h-40 overflow-auto">
+            {filteredSuggestions.map((s) => (
+              <div
+                key={s.id}
+                className="px-3 py-2 cursor-pointer hover:bg-purple-100"
+                onClick={() => handleSuggestionClick(s)}
+              >
+                <div className="font-medium">{s.name}</div>
+                <div className="text-xs text-gray-500">{s.category}</div>
+              </div>
+            ))}
           </div>
-        </div>
-      )}
+        )}
+      </div>
+      <div className="mt-4 text-sm font-mono text-gray-800">
+        Result: <span className="font-bold">{evalFormula()}</span>
+      </div>
     </div>
   )
 }
