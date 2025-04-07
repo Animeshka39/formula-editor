@@ -1,9 +1,10 @@
 import { create } from 'zustand'
 
 export type FormulaItem =
-  | { type: 'tag'; id: string; name: string; category: string; value: number | '' }
-  | { type: 'operator'; value: string }
-  | { type: 'number'; value: string }
+    | { type: "tag"; id: string; name: string; category: string; value: number | string | "" }
+    | { type: "operator"; value: string }
+    | { type: "number"; value: string }
+    | { type: "percentage"; value: string }
 
 type FormulaState = {
   formula: FormulaItem[]

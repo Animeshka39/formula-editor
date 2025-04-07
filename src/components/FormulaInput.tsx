@@ -1,12 +1,14 @@
 import { useFormulaStore } from '../store/formulaStore'
 import { useAutocomplete, Suggestion } from '../hooks/useAutocomplete'
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 
 export default function FormulaInput() {
   const { formula, addItem, removeItem } = useFormulaStore()
   const { data: suggestions = [] } = useAutocomplete()
   const [inputValue, setInputValue] = useState('')
+  const [cursorIndex, setCursorIndex] = useState(formula.length)
   const [showDropdown, setShowDropdown] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
 
   const filteredSuggestions = suggestions.filter((s) =>
     s.name.toLowerCase().includes(inputValue.toLowerCase())
@@ -18,106 +20,145 @@ export default function FormulaInput() {
       const trimmed = inputValue.trim()
       if (!trimmed) return
 
-      const match = suggestions.find((s) => s.name === trimmed)
-      if (match) {
-        addItem({ type: 'tag', ...match })
-      } else if (/^\d+(\.\d+)?$/.test(trimmed)) {
-        addItem({ type: 'number', value: trimmed })
-      } else if (/^[+\-*/^()%]$/.test(trimmed)) {
-        addItem({ type: 'operator', value: trimmed })
+      // Handle numbers (including decimals)
+      if (/^[0-9.]+$/.test(trimmed)) {
+        addItem({ type: 'number', value: trimmed }, cursorIndex)
+        setCursorIndex((i) => i + 1)
+      }
+      // Handle percentage
+      else if (/^[0-9.]+%$/.test(trimmed)) {
+        addItem({ type: 'percentage', value: trimmed }, cursorIndex)
+        setCursorIndex((i) => i + 1)
+      }
+      // Handle operators and parentheses
+      else if (/^[+\-*/^()]$/.test(trimmed)) {
+        addItem({ type: 'operator', value: trimmed }, cursorIndex)
+        setCursorIndex((i) => i + 1)
+      }
+      // Handle suggestions (tags)
+      else {
+        const match = suggestions.find((s) => s.name === trimmed)
+        if (match) {
+          addItem({ type: 'tag', ...match }, cursorIndex) // Pass a single object
+          setCursorIndex((i) => i + 1)
+        }
       }
 
       setInputValue('')
       setShowDropdown(false)
     } else if (e.key === 'Backspace' && inputValue === '') {
-      removeItem(formula.length - 1)
+      if (cursorIndex > 0) {
+        removeItem(cursorIndex - 1)
+        setCursorIndex((i) => i - 1)
+      }
     }
   }
 
   const handleSuggestionClick = (s: Suggestion) => {
-    addItem({ type: 'tag', ...s })
+    addItem({ type: 'tag', ...s }, cursorIndex) // Pass a single object
     setInputValue('')
+    setCursorIndex((i) => i + 1)
     setShowDropdown(false)
+    inputRef.current?.focus()
   }
+
+  const handleDropdownChange = (tagId: string, selectedOption: string) => {
+    const updatedFormula = formula.map((item) =>
+      item.type === 'tag' && item.id === tagId
+        ? { ...item, value: selectedOption }
+        : item
+    )
+
+    // Add each updated formula item individually
+    updatedFormula.forEach(item => {
+      addItem(item)
+    })
+  }
+
+  const renderDropdown = (tagId: string) => (
+    <select
+      className="ml-2 text-xs text-gray-700 bg-white border border-gray-300 rounded"
+      onChange={(e) => handleDropdownChange(tagId, e.target.value)}
+    >
+      <option value="Option A">Option A</option>
+      <option value="Option B">Option B</option>
+      <option value="Option C">Option C</option>
+    </select>
+  )
 
   const evalFormula = () => {
     const expr = formula
       .map((item) => {
-        if (item.type === 'tag') {
-          // Defaulting undefined tag values to 0
-          return typeof item.value === 'number' ? item.value : 0
-        }
-        if (item.type === 'number') return parseFloat(item.value)
-        if (item.type === 'operator') {
-          // Handle percentage as division by 100
-          return item.value === '%' ? '/ 100' : item.value
-        }
+        if (item.type === 'tag') return item.value || 1 // Dummy value for tags
+        if (item.type === 'number') return Number(item.value) // Ensure value is a number
+        if (item.type === 'operator') return item.value
+        if (item.type === 'percentage') return Number(item.value.replace('%', '')) / 100 // Convert percentage to number
         return ''
       })
       .join(' ')
-
     try {
-      // eslint-disable-next-line no-new-func
-      return Function(`return (${expr})`)()
+      return Function(`return (${expr})`)() // Evaluate the formula expression
     } catch {
       return 'Invalid formula'
     }
   }
 
   return (
-    <div className="w-full max-w-3xl p-4">
-      <div className="flex items-center border border-purple-400 rounded px-2 py-1 bg-white shadow-sm text-sm font-mono relative">
-        <span className="text-purple-500 font-semibold mr-2">=</span>
-
-        {formula.map((item, index) => (
-          <div
-            key={index}
-            className="flex items-center mx-1 px-2 py-0.5 rounded bg-gray-100"
-          >
-            {item.type === 'tag' && (
-              <>
-                <span className="text-blue-600">{item.name}</span>
-                <select className="ml-2 text-xs text-gray-700 bg-white border border-gray-300 rounded">
-                  <option>Option 1</option>
-                  <option>Option 2</option>
-                </select>
-              </>
-            )}
-            {item.type === 'operator' && <span>{item.value}</span>}
-            {item.type === 'number' && <span>{item.value}</span>}
-          </div>
-        ))}
-
-        <input
-          className="flex-1 outline-none px-1 min-w-[100px] text-gray-700"
-          placeholder="Enter a formula"
-          value={inputValue}
-          onChange={(e) => {
-            setInputValue(e.target.value)
-            setShowDropdown(true)
-          }}
-          onKeyDown={handleKeyDown}
-        />
-
-        {showDropdown && filteredSuggestions.length > 0 && (
-          <div className="absolute left-10 top-full mt-1 w-72 bg-white border border-gray-300 rounded shadow z-10 max-h-40 overflow-auto">
-            {filteredSuggestions.map((s) => (
-              <div
-                key={s.id}
-                className="px-3 py-2 cursor-pointer hover:bg-purple-100"
-                onClick={() => handleSuggestionClick(s)}
-              >
-                <div className="font-medium">{s.name}</div>
-                <div className="text-xs text-gray-500">{s.category}</div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="mt-4 text-sm font-mono text-gray-800">
-        Result: <span className="font-bold">{evalFormula()}</span>
+    <div className="w-full max-w-3xl mx-auto p-6">
+    <div className="relative flex flex-wrap items-center border border-purple-300 rounded-xl px-4 py-3 bg-white/70 backdrop-blur-md shadow-lg text-sm font-mono min-h-[56px] transition-all duration-300">
+      <span className="text-purple-600 text-base font-bold mr-2 select-none">=</span>
+      {formula.map((item, index) => (
+        <div
+          key={index}
+          className="flex items-center space-x-1 mx-1 px-3 py-1 rounded-full bg-gray-100 hover:bg-gray-200 transition cursor-pointer shadow-sm"
+          onClick={() => setCursorIndex(index + 1)}
+        >
+          {item.type === 'tag' && (
+            <>
+              <span className="text-blue-700 font-medium">{item.name}</span>
+              {renderDropdown(item.id)}
+            </>
+          )}
+          {item.type === 'operator' && <span className="text-gray-700">{item.value}</span>}
+          {item.type === 'number' && <span className="text-green-700">{item.value}</span>}
+          {item.type === 'percentage' && <span className="text-pink-600">{item.value}</span>}
+        </div>
+      ))}
+  
+      <input
+        ref={inputRef}
+        className="flex-1 outline-none px-2 py-1 min-w-[120px] bg-transparent text-gray-800 placeholder-gray-400 focus:ring-0 focus:outline-none"
+        placeholder="Enter formula..."
+        value={inputValue}
+        onChange={(e) => {
+          setInputValue(e.target.value)
+          setShowDropdown(true)
+        }}
+        onKeyDown={handleKeyDown}
+      />
+  
+      {showDropdown && filteredSuggestions.length > 0 && (
+        <div className="absolute left-10 top-full mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-xl z-20 max-h-52 overflow-y-auto animate-fadeIn transition-all">
+          {filteredSuggestions.map((s) => (
+            <div
+              key={s.id}
+              className="px-4 py-3 cursor-pointer hover:bg-purple-100 border-b last:border-b-0 transition"
+              onClick={() => handleSuggestionClick(s)}
+            >
+              <div className="font-semibold text-gray-800">{s.name}</div>
+              <div className="text-xs text-gray-500">{s.category}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  
+    <div className="mt-6 text-sm font-mono text-gray-900">
+      <div className="inline-block px-4 py-2 rounded-lg bg-gradient-to-r from-purple-100 to-purple-200 shadow-inner text-purple-800 font-bold">
+        Result: {evalFormula()}
       </div>
     </div>
+  </div>
+  
   )
 }
