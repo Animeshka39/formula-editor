@@ -16,15 +16,14 @@ export default function FormulaInput() {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault()
       const trimmed = inputValue.trim()
-
       if (!trimmed) return
 
       const match = suggestions.find((s) => s.name === trimmed)
       if (match) {
         addItem({ type: 'tag', ...match })
-      } else if (/^[\d]+$/.test(trimmed)) {
+      } else if (/^\d+(\.\d+)?$/.test(trimmed)) {
         addItem({ type: 'number', value: trimmed })
-      } else if (/^[+\-*/^()]$/.test(trimmed)) {
+      } else if (/^[+\-*/^()%]$/.test(trimmed)) {
         addItem({ type: 'operator', value: trimmed })
       }
 
@@ -45,15 +44,20 @@ export default function FormulaInput() {
     const expr = formula
       .map((item) => {
         if (item.type === 'tag') {
+          // Defaulting undefined tag values to 0
           return typeof item.value === 'number' ? item.value : 0
         }
-        if (item.type === 'number') return item.value
-        if (item.type === 'operator') return item.value
+        if (item.type === 'number') return parseFloat(item.value)
+        if (item.type === 'operator') {
+          // Handle percentage as division by 100
+          return item.value === '%' ? '/ 100' : item.value
+        }
         return ''
       })
       .join(' ')
 
     try {
+      // eslint-disable-next-line no-new-func
       return Function(`return (${expr})`)()
     } catch {
       return 'Invalid formula'
@@ -94,6 +98,7 @@ export default function FormulaInput() {
           }}
           onKeyDown={handleKeyDown}
         />
+
         {showDropdown && filteredSuggestions.length > 0 && (
           <div className="absolute left-10 top-full mt-1 w-72 bg-white border border-gray-300 rounded shadow z-10 max-h-40 overflow-auto">
             {filteredSuggestions.map((s) => (
@@ -109,6 +114,7 @@ export default function FormulaInput() {
           </div>
         )}
       </div>
+
       <div className="mt-4 text-sm font-mono text-gray-800">
         Result: <span className="font-bold">{evalFormula()}</span>
       </div>
