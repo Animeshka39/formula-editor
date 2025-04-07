@@ -63,7 +63,6 @@ export default function FormulaInput() {
         />
       </div>
 
-      {/* Autocomplete Dropdown */}
       {inputValue && (
         <div className="relative">
           <div className="absolute left-0 mt-1 w-full bg-white border rounded shadow z-10">
